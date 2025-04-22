@@ -1,467 +1,299 @@
 import pygame
-import random
-import os
 import sys
-from pygame.math import Vector2
+import os
+import random
+from config import *
+from game.managers.audio import AudioManager
+from game.managers.score import ScoreManager
+from game.entities.player import Player
+from game.entities.enemies import Enemy, EnemyType
+from game.entities.bullets import Bullet, EnemyBullet
 
-# Inicialização do Pygame com configurações de áudio otimizadas
-pygame.init()
-pygame.mixer.pre_init(frequency=44100, size=-16, channels=2, buffer=512)
-pygame.mixer.init()
-pygame.display.set_caption("AstroSmash MVP - Versão com Áudio")
-
-# Configurações básicas
-WIDTH, HEIGHT = 800, 600
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-clock = pygame.time.Clock()
-FPS = 60
-
-# Cores
-BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
-GREEN = (0, 255, 0)
-RED = (255, 0, 0)
-YELLOW = (255, 255, 0)
-BLUE = (0, 0, 255)
-PURPLE = (128, 0, 128)
-ORANGE = (255, 165, 0)
-
-# Estados do jogo
-MENU = 0
-PLAYING = 1
-GAME_OVER = 2
-PAUSE = 3
-SPLASH = 4
-game_state = SPLASH
-
-# Função para carregar sons com fallback
-def load_sound(filename, volume=1.0):
-    """Carrega um arquivo de som com tratamento de erros robusto"""
-    try:
-        if not pygame.mixer.get_init():
-            pygame.mixer.init()
-        
-        # Verifica se o arquivo existe
-        if not os.path.exists(filename):
-            print(f"Arquivo não encontrado: {filename}")
-            return None
-            
-        sound = pygame.mixer.Sound(filename)
-        sound.set_volume(volume)
-        return sound
-    except Exception as e:
-        print(f"Erro ao carregar {filename}: {str(e)}")
-        return None
-
-# Carregar sons com fallback
-try:
-    shoot_sound = load_sound('tiro.wav') or load_sound('tiro.mp3', 0.3)
-    background_music = load_sound('fundo.wav') or load_sound('fundo.mp3', 0.2)
-    boss_spawn_sound = load_sound('chefe.wav') or load_sound('chefe.mp3', 0.5)
-    movement_sound = load_sound('movimento.wav') or load_sound('movimento.mp3', 0.1)
-    
-    # Verificação final se algum som foi carregado
-    has_sound = any([shoot_sound, background_music, boss_spawn_sound, movement_sound])
-    
-    # Tocar música de fundo se disponível
-    if background_music:
-        background_music.play(-1)  # Loop infinito
-except Exception as e:
-    print(f"Erro crítico no sistema de áudio: {str(e)}")
-    has_sound = False
-
-# Classe do Jogador
-class Player(pygame.sprite.Sprite):
+class AstroSmash:
     def __init__(self):
-        super().__init__()
-        self.image = pygame.Surface((30, 40), pygame.SRCALPHA)
-        pygame.draw.polygon(self.image, GREEN, [(15, 0), (0, 40), (30, 40)])
-        self.rect = self.image.get_rect(center=(WIDTH//2, HEIGHT-50))
-        self.speed = 5
-        self.health = 100
-        self.shield = 50
-        self.heat = 0
-        self.max_heat = 100
-        self.cooling_rate = 1.2
-        self.shoot_delay = 200  # ms
-        self.last_shot = 0
-        self.last_movement_sound = 0
-        self.movement_sound_delay = 300  # ms
+        pygame.init()
+        pygame.display.set_caption("AstroSmash MVP")
         
-    def update(self):
-        keys = pygame.key.get_pressed()
-        is_moving = False
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        self.clock = pygame.time.Clock()
+        self.running = True
         
-        # Movimento
-        if keys[pygame.K_a] and self.rect.left > 0:
-            self.rect.x -= self.speed
-            is_moving = True
-        if keys[pygame.K_d] and self.rect.right < WIDTH:
-            self.rect.x += self.speed
-            is_moving = True
-        if keys[pygame.K_w] and self.rect.top > 0:
-            self.rect.y -= self.speed
-            is_moving = True
-        if keys[pygame.K_s] and self.rect.bottom < HEIGHT:
-            self.rect.y += self.speed
-            is_moving = True
+        # inicializa
+        self.audio_manager = AudioManager()
+        self.load_audio()
+        self.score_manager = ScoreManager()
+        
+        # sprites
+        self.all_sprites = pygame.sprite.Group()
+        self.enemies = pygame.sprite.Group()
+        self.bullets = pygame.sprite.Group()
+        self.enemy_bullets = pygame.sprite.Group()
+        
+        # cria o player
+        self.player = Player(self.audio_manager)
+        self.all_sprites.add(self.player)
+        
+        # variaveis
+        self.game_state = SPLASH
+        self.splash_time = pygame.time.get_ticks()
+        self.last_enemy_spawn = 0
+        self.enemy_spawn_interval = 1000
+        self.boss_active = False
+        
+    def load_audio(self):
+        """Carrega todos os efeitos sonoros"""
+        self.audio_manager.has_sound = True
+        try:
+            base_path = os.path.join('assets', 'sounds')
             
-        # Tocar som de movimento
-        if has_sound and is_moving and movement_sound:
+            # Verifica se a pasta existe
+            if not os.path.exists(base_path):
+                os.makedirs(base_path)
+                print(f"Aviso: Pasta de sons criada em {base_path}")
+                self.audio_manager.has_sound = False
+                return
+
+            sounds_to_load = [
+                ('tiro', 'tiro.mp3'),
+                ('fundo', 'fundo.mp3'),
+                ('chefe', 'chefe.mp3'),
+                ('movimento', 'movimento.mp3'),
+                ('hit', 'hit.mp3'),
+                ('damage', 'damage.wav'),
+                ('gameover', 'gameover.mp3')
+            ]
+
+            for name, file in sounds_to_load:
+                path = os.path.join(base_path, file)
+                try:
+                    if os.path.exists(path):
+                        self.audio_manager.load_sound(name, path)
+                        print(f"Som {name} carregado com sucesso")
+                    else:
+                        print(f"Aviso: Arquivo não encontrado - {file}")
+                        self.audio_manager.has_sound = False
+                except Exception as e:
+                    print(f"Erro ao carregar {name}: {str(e)}")
+                    self.audio_manager.has_sound = False
+
+            # Fallback caso nenhum som seja carregado
+            if not self.audio_manager.sounds:
+                self.audio_manager.has_sound = False
+                print("AVISO: Nenhum som foi carregado - Continuando sem áudio")
+                
+        except Exception as e:
+            print(f"Erro crítico no sistema de áudio: {str(e)}")
+            self.audio_manager.has_sound = False
+    
+    def spawn_enemy(self):
+        now = pygame.time.get_ticks()
+        
+        # Spawn de boss a cada 5 waves
+        if self.score_manager.wave % 5 == 0 and not self.boss_active:
+            enemy = Enemy(EnemyType.BOSS)
+            self.boss_active = True
+            self.audio_manager.play_sound('chefe')
+        else:
+            # Spawn de inimigos normais ou asteroides
+            if random.random() < 0.3:  # 30% de chance de ser asteroide
+                enemy = Enemy(EnemyType.ASTEROID)
+            else:
+                enemy = Enemy(EnemyType.COMMON)
+        
+        self.all_sprites.add(enemy)
+        self.enemies.add(enemy)
+    
+    def run(self):
+        while self.running:
+            self.clock.tick(FPS)
+            self.handle_events()
+            self.update()
+            self.draw()
+            pygame.display.flip()
+        
+        pygame.quit()
+        sys.exit()
+    
+    def handle_events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    if self.game_state == PLAYING:
+                        self.game_state = PAUSE
+                    elif self.game_state == PAUSE:
+                        self.game_state = PLAYING
+                if event.key == pygame.K_SPACE and self.game_state == PLAYING:
+                    self.player.shoot(self.all_sprites, self.bullets)
+                if event.key == pygame.K_RETURN and self.game_state in [MENU, GAME_OVER, SPLASH]:
+                    if self.game_state == SPLASH and (pygame.time.get_ticks() - self.splash_time) < 2000:
+                        continue
+                    self.reset_game()
+    
+    def update(self):
+        if self.game_state == SPLASH:
+            if pygame.time.get_ticks() - self.splash_time > 2000:
+                self.game_state = MENU
+        
+        elif self.game_state == PLAYING:
+            self.all_sprites.update()
+            
+            # Verifica se o boss foi derrotado
+            self.boss_active = any(e.enemy_type == EnemyType.BOSS for e in self.enemies)
+            
+            # Spawn de inimigos
             now = pygame.time.get_ticks()
-            if now - self.last_movement_sound > self.movement_sound_delay:
-                movement_sound.play()
-                self.last_movement_sound = now
-        
-        # Resfriamento
-        self.heat = max(0, self.heat - self.cooling_rate)
-        
-    def shoot(self):
-        now = pygame.time.get_ticks()
-        if now - self.last_shot > self.shoot_delay and self.heat < self.max_heat:
-            self.last_shot = now
-            self.heat += 10
-            bullet = Bullet(self.rect.centerx, self.rect.top)
-            all_sprites.add(bullet)
-            bullets.add(bullet)
-            if has_sound and shoot_sound:
-                shoot_sound.play()
-            return True
-        return False
-        
-    def take_damage(self, amount):
-        if self.shield > 0:
-            self.shield = max(0, self.shield - amount)
-        else:
-            self.health = max(0, self.health - amount)
-            if self.health <= 0:
-                return True
-        return False
-
-# Classe dos Projéteis
-class Bullet(pygame.sprite.Sprite):
-    def __init__(self, x, y):
-        super().__init__()
-        self.image = pygame.Surface((4, 10), pygame.SRCALPHA)
-        pygame.draw.rect(self.image, YELLOW, (0, 0, 4, 10))
-        self.rect = self.image.get_rect(center=(x, y))
-        self.speed = 10
-        
-    def update(self):
-        self.rect.y -= self.speed
-        if self.rect.bottom < 0:
-            self.kill()
-
-# Classe dos Inimigos
-class Enemy(pygame.sprite.Sprite):
-    def __init__(self):
-        super().__init__()
-        self.image = pygame.Surface((30, 30), pygame.SRCALPHA)
-        pygame.draw.circle(self.image, RED, (15, 15), 15)
-        self.rect = self.image.get_rect(center=(random.randint(20, WIDTH-20), -20))
-        self.speed = random.randint(1, 4)
-        self.health = 1
-        
-    def update(self):
-        self.rect.y += self.speed
-        if self.rect.top > HEIGHT:
-            self.kill()
+            if now - self.last_enemy_spawn > self.enemy_spawn_interval:
+                self.last_enemy_spawn = now
+                self.spawn_enemy()
+                
+                # Aumenta dificuldade gradualmente
+                if random.random() < 0.1:
+                    self.enemy_spawn_interval = max(200, self.enemy_spawn_interval - 50)
+                    if self.enemy_spawn_interval % 500 == 0:
+                        self.score_manager.increase_wave()
             
-    def take_damage(self):
-        self.health -= 1
-        if self.health <= 0:
-            self.kill()
-            return True
-        return False
-
-# Classe dos Asteroides
-class Asteroid(Enemy):
-    def __init__(self, size="large"):
-        super().__init__()
-        self.size = size
-        sizes = {"large": 40, "medium": 25, "small": 15}
-        self.image = pygame.Surface((sizes[size], sizes[size]), pygame.SRCALPHA)
-        pygame.draw.circle(self.image, (150, 150, 150), (sizes[size]//2, sizes[size]//2), sizes[size]//2)
-        self.rect = self.image.get_rect(center=(random.randint(20, WIDTH-20), -20))
-        self.speed = random.randint(1, 3)
-        self.health = {"large": 3, "medium": 2, "small": 1}[size]
-        
-    def take_damage(self):
-        self.health -= 1
-        if self.health <= 0:
-            if self.size != "small":
-                new_size = "medium" if self.size == "large" else "small"
-                for _ in range(2):
-                    asteroid = Asteroid(new_size)
-                    asteroid.rect.center = self.rect.center
-                    all_sprites.add(asteroid)
-                    enemies.add(asteroid)
-            self.kill()
-            return True
-        return False
-
-# Classe do Boss
-class Boss(Enemy):
-    def __init__(self):
-        super().__init__()
-        size = 60
-        self.image = pygame.Surface((size, size), pygame.SRCALPHA)
-        pygame.draw.polygon(self.image, PURPLE, [
-            (size//2, 0), 
-            (size, size//3),
-            (size, 2*size//3),
-            (size//2, size),
-            (0, 2*size//3),
-            (0, size//3)
-        ])
-        self.rect = self.image.get_rect(center=(WIDTH//2, -60))
-        self.speed = 2
-        self.health = 15
-        self.last_shot = 0
-        self.shoot_delay = 1500  # ms
-        
-    def update(self):
-        self.rect.y += self.speed
-        if self.rect.top > HEIGHT:
-            self.kill()
-        
-        # Tiro do boss
-        now = pygame.time.get_ticks()
-        if now - self.last_shot > self.shoot_delay:
-            self.last_shot = now
-            for angle in range(0, 360, 45):
-                bullet = EnemyBullet(self.rect.centerx, self.rect.centery, angle)
-                all_sprites.add(bullet)
-                enemy_bullets.add(bullet)
-
-# Classe dos Projéteis do Boss
-class EnemyBullet(pygame.sprite.Sprite):
-    def __init__(self, x, y, angle):
-        super().__init__()
-        self.image = pygame.Surface((8, 8), pygame.SRCALPHA)
-        pygame.draw.circle(self.image, ORANGE, (4, 4), 4)
-        self.rect = self.image.get_rect(center=(x, y))
-        self.speed = 3
-        self.angle = angle
-        self.direction = Vector2(1, 0).rotate(-angle)
-        
-    def update(self):
-        self.rect.x += self.direction.x * self.speed
-        self.rect.y += self.direction.y * self.speed
-        if not (0 <= self.rect.x <= WIDTH and 0 <= self.rect.y <= HEIGHT):
-            self.kill()
-
-# Grupos de sprites
-all_sprites = pygame.sprite.Group()
-enemies = pygame.sprite.Group()
-bullets = pygame.sprite.Group()
-enemy_bullets = pygame.sprite.Group()
-
-# Cria o jogador
-player = Player()
-all_sprites.add(player)
-
-# Variáveis do jogo
-score = 0
-high_score = 0
-wave = 1
-enemy_spawn_timer = 0
-enemy_spawn_interval = 1000  # ms
-last_enemy_spawn = 0
-game_over = False
-font = pygame.font.Font(None, 36)
-splash_time = pygame.time.get_ticks()
-
-# Carregar high score
-try:
-    with open('highscore.dat', 'rb') as f:
-        high_score = int.from_bytes(f.read(), 'big')
-except:
-    high_score = 0
-
-# Função para spawnar inimigos
-def spawn_enemy():
-    # Chance de spawnar boss a cada 5 waves
-    if wave % 5 == 0 and not any(isinstance(e, Boss) for e in enemies):
-        enemy = Boss()
-        if has_sound and boss_spawn_sound:
-            boss_spawn_sound.play()
-    else:
-        enemy_type = random.choice(["enemy", "asteroid"])
-        if enemy_type == "enemy":
-            enemy = Enemy()
-        else:
-            asteroid_size = random.choice(["large", "medium", "small"])
-            enemy = Asteroid(asteroid_size)
+            # Colisões
+            self.check_collisions()
     
-    all_sprites.add(enemy)
-    enemies.add(enemy)
-
-# Função para mostrar texto na tela
-def draw_text(text, size, x, y, color=WHITE):
-    font = pygame.font.Font(None, size)
-    text_surface = font.render(text, True, color)
-    text_rect = text_surface.get_rect(center=(x, y))
-    screen.blit(text_surface, text_rect)
-
-# Função para mostrar splash screen
-def show_splash_screen():
-    screen.fill(BLACK)
-    draw_text("ASTROSMASH", 72, WIDTH//2, HEIGHT//3)
-    draw_text("MVP Edition", 36, WIDTH//2, HEIGHT//2)
-    draw_text("Carregando...", 24, WIDTH//2, HEIGHT*3//4)
-    pygame.display.flip()
-
-# Loop principal do jogo
-running = True
-while running:
-    # Mantém o loop rodando na velocidade correta
-    clock.tick(FPS)
-    
-    # Processa eventos
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                if game_state == PLAYING:
-                    game_state = PAUSE
-                elif game_state == PAUSE:
-                    game_state = PLAYING
-            if event.key == pygame.K_SPACE and game_state == PLAYING:
-                player.shoot()
-            if event.key == pygame.K_RETURN and game_state in [MENU, GAME_OVER, SPLASH]:
-                if game_state == SPLASH and (pygame.time.get_ticks() - splash_time) < 2000:
-                    continue  # Não permite pular a splash screen muito rápido
-                game_state = PLAYING
-                all_sprites.empty()
-                enemies.empty()
-                bullets.empty()
-                enemy_bullets.empty()
-                player = Player()
-                all_sprites.add(player)
-                score = 0
-                wave = 1
-                enemy_spawn_interval = 1000
-    
-    # Atualiza o jogo
-    if game_state == SPLASH:
-        if pygame.time.get_ticks() - splash_time > 2000:  # 2 segundos
-            game_state = MENU
-    
-    elif game_state == PLAYING:
-        # Atualiza todos os sprites
-        all_sprites.update()
-        
-        # Spawn de inimigos
-        now = pygame.time.get_ticks()
-        if now - last_enemy_spawn > enemy_spawn_interval:
-            last_enemy_spawn = now
-            spawn_enemy()
-            
-            # Aumenta a dificuldade
-            if random.random() < 0.1:
-                enemy_spawn_interval = max(200, enemy_spawn_interval - 50)
-                if enemy_spawn_interval % 500 == 0:
-                    wave += 1
-        
+    def check_collisions(self):
         # Colisões entre projéteis e inimigos
-        hits = pygame.sprite.groupcollide(bullets, enemies, True, False)
+        hits = pygame.sprite.groupcollide(self.bullets, self.enemies, True, False)
         for bullet, enemy_list in hits.items():
             for enemy in enemy_list:
-                if enemy.take_damage():
-                    score += 10 * (1 if not hasattr(enemy, "size") else {"large": 3, "medium": 2, "small": 1}[enemy.size])
-        
-        # Colisões entre jogador e inimigos
-        hits = pygame.sprite.spritecollide(player, enemies, True)
-        for hit in hits:
-            if player.take_damage(10):
-                game_state = GAME_OVER
-                if score > high_score:
-                    high_score = score
-                    with open('highscore.dat', 'wb') as f:
-                        f.write(high_score.to_bytes(4, 'big'))
-        
-        # Colisões entre jogador e projéteis inimigos
-        hits = pygame.sprite.spritecollide(player, enemy_bullets, True)
-        for hit in hits:
-            if player.take_damage(5):
-                game_state = GAME_OVER
-                if score > high_score:
-                    high_score = score
-                    with open('highscore.dat', 'wb') as f:
-                        f.write(high_score.to_bytes(4, 'big'))
-    
-    # Desenha tudo
-    screen.fill(BLACK)
-    
-    # Desenha estrelas de fundo dinâmicas
-    for i in range(50):
-        x = (pygame.time.get_ticks() // 100 + i * 100) % WIDTH
-        y = (i * 20 + pygame.time.get_ticks() // 50) % HEIGHT
-        brightness = min(255, 50 + abs((pygame.time.get_ticks() // 10 + i * 50) % 510 - 255))
-        pygame.draw.circle(screen, (brightness, brightness, brightness), (x, y), 1)
-    
-    all_sprites.draw(screen)
-    
-    # Desenha HUD
-    draw_text(f" pontuação: {score}", 30, 70, 20)
-    draw_text(f"Recorde: {high_score}", 30, 70, 50)
-    draw_text(f"Nível: {wave}", 30, WIDTH - 70, 20)
-    
-    # Barra de saúde
-    pygame.draw.rect(screen, (50, 50, 50), (WIDTH - 120, 50, 104, 20))
-    pygame.draw.rect(screen, RED, (WIDTH - 118, 52, player.health, 16))
-    
-    # Barra de escudo
-    pygame.draw.rect(screen, (50, 50, 50), (WIDTH - 120, 80, 104, 10))
-    pygame.draw.rect(screen, BLUE, (WIDTH - 118, 82, player.shield, 6))
-    
-    # Barra de heat
-    pygame.draw.rect(screen, (50, 50, 50), (WIDTH//2 - 50, 10, 100, 10))
-    pygame.draw.rect(screen, (min(255, player.heat * 2.55), max(0, 255 - player.heat * 2.55), 0), 
-                    (WIDTH//2 - 50, 10, player.heat, 10))
-    
-    # Indicador de boss
-    boss_active = any(isinstance(e, Boss) for e in enemies)
-    if boss_active:
-        draw_text("BOSS ALERT!", 40, WIDTH//2, 80, ORANGE)
-    
-    # Telas de menu/pause/game over/splash
-    if game_state == SPLASH:
-        show_splash_screen()
-    
-    elif game_state == MENU:
-        s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        s.fill((0, 0, 0, 180))
-        screen.blit(s, (0, 0))
-        draw_text("ASTROSMASH", 64, WIDTH//2, HEIGHT//4)
-        draw_text(f"Recorde: {high_score}", 36, WIDTH//2, HEIGHT//3)
-        draw_text("Pressione ENTER para Jogar", 36, WIDTH//2, HEIGHT//2)
-        draw_text("Setas para mover | Espaço para atirar", 24, WIDTH//2, HEIGHT*3//4)
-        draw_text("ESC para pausar", 24, WIDTH//2, HEIGHT*3//4 + 30)
-    
-    elif game_state == PAUSE:
-        s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        s.fill((0, 0, 0, 180))
-        screen.blit(s, (0, 0))
-        draw_text("PAUSADO", 64, WIDTH//2, HEIGHT//2)
-        draw_text("Pressione ESC para continuar", 24, WIDTH//2, HEIGHT//2 + 50)
-    
-    elif game_state == GAME_OVER:
-        s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        s.fill((0, 0, 0, 180))
-        screen.blit(s, (0, 0))
-        draw_text("FIM DE JOGO", 64, WIDTH//2, HEIGHT//2 - 50)
-        draw_text(f"Pontuação: {score}", 36, WIDTH//2, HEIGHT//2)
-        draw_text(f"Recorde: {high_score}", 36, WIDTH//2, HEIGHT//2 + 30)
-        draw_text("Pressione ENTER para recomeçar", 24, WIDTH//2, HEIGHT//2 + 80)
-    
-    # Atualiza a tela
-    pygame.display.flip()
+                damage = 2 if enemy.enemy_type == EnemyType.BOSS else 1
+                if enemy.take_damage(damage):
+                    self.audio_manager.play_sound('hit')
+                    # Pontuação baseada no tipo de inimigo
+                    if enemy.enemy_type == EnemyType.BOSS:
+                        self.score_manager.add_score(100)
+                        self.boss_active = False
+                    elif enemy.enemy_type == EnemyType.ASTEROID:
+                        self.score_manager.add_score(20)
+                    else:
+                        self.score_manager.add_score(10)
 
-# Encerrar música ao sair
-if has_sound and background_music:
-    background_music.stop()
-pygame.quit()
-sys.exit()
+        # Colisões entre jogador e inimigos
+        hits = pygame.sprite.spritecollide(self.player, self.enemies, False)
+        for hit in hits:
+            damage = 10 if hit.enemy_type == EnemyType.BOSS else 5  # Reduzi o dano do boss de 20 para 10
+            self.audio_manager.play_sound('damage')
+            if self.player.take_damage(damage):
+                self.game_over()
+
+        # Colisões entre jogador e projéteis inimigos
+        hits = pygame.sprite.spritecollide(self.player, self.enemy_bullets, True)
+        for hit in hits:
+            self.audio_manager.play_sound('damage')
+            if self.player.take_damage(2):  # Reduzi o dano dos projéteis de 5 para 2
+                self.game_over()
+    
+    def game_over(self):
+        self.game_state = GAME_OVER
+        self.score_manager.save_high_score()
+        self.audio_manager.stop_music()
+        self.audio_manager.play_sound('gameover')
+    
+    def reset_game(self):
+        self.game_state = PLAYING
+        self.all_sprites.empty()
+        self.enemies.empty()
+        self.bullets.empty()
+        self.enemy_bullets.empty()
+        self.boss_active = False
+        
+        self.audio_manager.stop_music()
+        self.player = Player(self.audio_manager)
+        self.all_sprites.add(self.player)
+        
+        # Reset do score manager
+        self.score_manager.score = 0
+        self.score_manager.wave = 1
+        self.score_manager.load_high_score()  # Recarrega o high score
+        
+        self.enemy_spawn_interval = 1000
+        
+        self.audio_manager.play_music('fundo')
+    
+    def draw(self):
+        self.screen.fill(BLACK)
+        self.draw_stars()
+        self.all_sprites.draw(self.screen)
+        self.draw_hud()
+        self.draw_state_screens()
+    
+    def draw_stars(self):
+        for i in range(50):
+            x = (pygame.time.get_ticks() // 100 + i * 100) % WIDTH
+            y = (i * 20 + pygame.time.get_ticks() // 50) % HEIGHT
+            brightness = min(255, 50 + abs((pygame.time.get_ticks() // 10 + i * 50) % 510 - 255))
+            pygame.draw.circle(self.screen, (brightness, brightness, brightness), (x, y), 1)
+    
+    def draw_hud(self):
+        self.draw_text(f"Pontuação: {self.score_manager.score}", 30, 70, 20)
+        self.draw_text(f"Recorde: {self.score_manager.high_score}", 30, 70, 50)
+        self.draw_text(f"Nível: {self.score_manager.wave}", 30, WIDTH - 70, 20)
+        
+        # Barras de status
+        pygame.draw.rect(self.screen, (50, 50, 50), (WIDTH - 120, 50, 104, 20))
+        pygame.draw.rect(self.screen, RED, (WIDTH - 118, 52, self.player.health, 16))
+        pygame.draw.rect(self.screen, (50, 50, 50), (WIDTH - 120, 80, 104, 10))
+        pygame.draw.rect(self.screen, BLUE, (WIDTH - 118, 82, self.player.shield, 6))
+        pygame.draw.rect(self.screen, (50, 50, 50), (WIDTH//2 - 50, 10, 100, 10))
+        pygame.draw.rect(self.screen, (min(255, self.player.heat * 2.55), max(0, 255 - self.player.heat * 2.55), 0), 
+                        (WIDTH//2 - 50, 10, self.player.heat, 10))
+        
+        if self.boss_active:
+            self.draw_text("BOSS ALERT!", 40, WIDTH//2, 80, ORANGE)
+    
+    def draw_state_screens(self):
+        if self.game_state == SPLASH:
+            self.draw_splash_screen()
+        elif self.game_state == MENU:
+            self.draw_menu()
+        elif self.game_state == PAUSE:
+            self.draw_pause()
+        elif self.game_state == GAME_OVER:
+            self.draw_game_over()
+    
+    def draw_splash_screen(self):
+        s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        s.fill((0, 0, 0, 180))
+        self.screen.blit(s, (0, 0))
+        self.draw_text("ASTROSMASH", 72, WIDTH//2, HEIGHT//3)
+        self.draw_text("MVP Edition", 36, WIDTH//2, HEIGHT//2)
+    
+    def draw_menu(self):
+        s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        s.fill((0, 0, 0, 180))
+        self.screen.blit(s, (0, 0))
+        self.draw_text("ASTROSMASH", 64, WIDTH//2, HEIGHT//4)
+        self.draw_text(f"Recorde: {self.score_manager.high_score}", 36, WIDTH//2, HEIGHT//3)
+        self.draw_text("Pressione ENTER para Jogar", 36, WIDTH//2, HEIGHT//2)
+        self.draw_text("Setas para mover | Espaço para atirar", 24, WIDTH//2, HEIGHT*3//4)
+    
+    def draw_pause(self):
+        s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        s.fill((0, 0, 0, 180))
+        self.screen.blit(s, (0, 0))
+        self.draw_text("PAUSADO", 64, WIDTH//2, HEIGHT//2)
+        self.draw_text("Pressione ESC para continuar", 24, WIDTH//2, HEIGHT//2 + 50)
+    
+    def draw_game_over(self):
+        s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        s.fill((0, 0, 0, 180))
+        self.screen.blit(s, (0, 0))
+        self.draw_text("FIM DE JOGO", 64, WIDTH//2, HEIGHT//2 - 50)
+        self.draw_text(f"Pontuação: {self.score_manager.score}", 36, WIDTH//2, HEIGHT//2)
+        self.draw_text("Pressione ENTER para recomeçar", 24, WIDTH//2, HEIGHT//2 + 80)
+    
+    def draw_text(self, text, size, x, y, color=WHITE):
+        font = pygame.font.Font(None, size)
+        text_surface = font.render(text, True, color)
+        text_rect = text_surface.get_rect(center=(x, y))
+        self.screen.blit(text_surface, text_rect)
+
+if __name__ == "__main__":
+    game = AstroSmash()
+    game.run()

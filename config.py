@@ -1,0 +1,19 @@
+import pygame
+
+WIDTH, HEIGHT = 800, 600
+FPS = 60
+
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+GREEN = (0, 255, 0)
+RED = (255, 0, 0)
+YELLOW = (255, 255, 0)
+BLUE = (0, 0, 255)
+PURPLE = (128, 0, 128)
+ORANGE = (255, 165, 0)
+
+MENU = 0
+PLAYING = 1
+GAME_OVER = 2
+PAUSE = 3
+SPLASH = 4
