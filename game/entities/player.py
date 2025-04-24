@@ -1,17 +1,18 @@
 import pygame
 import os
 from config import *
-from ..managers.audio import AudioManager
+from game.managers.audio import AudioManager
 from game.entities.bullets import Bullet
 
 class Player(pygame.sprite.Sprite):
     def __init__(self, audio_manager: AudioManager):
         super().__init__()
         
-        # Inicializa todos os atributos primeiro
         self.speed = 5
-        self.health = 100
-        self.shield = 50
+        self.max_health = 100
+        self.health = self.max_health
+        self.max_shield = 50
+        self.shield = self.max_shield
         self.heat = 0
         self.max_heat = 100
         self.cooling_rate = 1.2
@@ -20,41 +21,38 @@ class Player(pygame.sprite.Sprite):
         self.last_movement_sound = 0
         self.movement_sound_delay = 300
         self.audio_manager = audio_manager
+        self.invincible = False
+        self.invincible_timer = 0
+        self.invincible_duration = 1000 
         
-        # Configuração da animação
         self.frames = self.load_animation_frames()
         self.current_frame = 0
-        self.animation_speed = 100  # ms entre frames
+        self.animation_speed = 100
         self.last_update = pygame.time.get_ticks()
         
-        # Imagem e rect
         self.image = self.frames[self.current_frame] if self.frames else self.create_fallback_image()
         self.rect = self.image.get_rect(center=(WIDTH//2, HEIGHT-50))
+        self.original_image = self.image.copy()
     
     def create_fallback_image(self):
-        """Cria uma imagem de fallback (triângulo verde)"""
         surface = pygame.Surface((30, 40), pygame.SRCALPHA)
         pygame.draw.polygon(surface, GREEN, [(15, 0), (0, 40), (30, 40)])
         return surface
     
     def load_animation_frames(self):
-        """Carrega os frames de animação da pasta"""
         frames = []
         try:
-            # Lista todos os arquivos na pasta do player
             frame_files = [f for f in os.listdir('assets/sprites/player/') 
                          if f.endswith(('.png', '.jpg', '.jpeg')) and f.startswith('player_')]
             
-            # Ordena os frames (player_0.png, player_1.png, etc.)
             frame_files.sort(key=lambda x: int(x.split('_')[1].split('.')[0]))
             
             for frame_file in frame_files:
                 frame = pygame.image.load(f'assets/sprites/player/{frame_file}').convert_alpha()
-                frame = pygame.transform.scale(frame, (60, 60))  # Ajusta o tamanho
+                frame = pygame.transform.scale(frame, (60, 60))
                 frames.append(frame)
                 
             if not frames:
-                print("AVISO: Nenhum frame encontrado na pasta assets/sprites/player/")
                 frames.append(self.create_fallback_image())
                 
         except Exception as e:
@@ -64,12 +62,25 @@ class Player(pygame.sprite.Sprite):
         return frames
     
     def update(self):
-        # Atualiza animação
         now = pygame.time.get_ticks()
+        
+        # Atualização de animação
         if now - self.last_update > self.animation_speed:
             self.last_update = now
             self.current_frame = (self.current_frame + 1) % len(self.frames)
             self.image = self.frames[self.current_frame]
+            self.original_image = self.image.copy()
+            
+            if self.invincible:
+                if (now // 100) % 2 == 0:
+                    self.image.set_alpha(100)
+                else:
+                    self.image.set_alpha(255)
+        
+        # Fim da invencibilidade
+        if self.invincible and now - self.invincible_timer > self.invincible_duration:
+            self.invincible = False
+            self.image.set_alpha(255)
         
         # Movimento
         keys = pygame.key.get_pressed()
@@ -89,9 +100,8 @@ class Player(pygame.sprite.Sprite):
             is_moving = True
             
         if self.audio_manager.has_sound and is_moving and 'movimento' in self.audio_manager.sounds:
-            now = pygame.time.get_ticks()
             if now - self.last_movement_sound > self.movement_sound_delay:
-                self.audio_manager.play('movimento')
+                self.audio_manager.play_sound('movimento')
                 self.last_movement_sound = now
         
         self.heat = max(0, self.heat - self.cooling_rate)
@@ -105,18 +115,33 @@ class Player(pygame.sprite.Sprite):
             all_sprites.add(bullet)
             bullets.add(bullet)
             
-            if hasattr(self.audio_manager, 'play_sound'):
+            if self.audio_manager.has_sound:
                 self.audio_manager.play_sound('tiro')
-            elif hasattr(self.audio_manager, 'play'):
-                self.audio_manager.play('tiro')
             return True
         return False
         
-    def take_damage(self, amount):
+    def take_damage(self, amount, enemy=None):
+        if self.invincible:
+            return False
+            
+        # Dano no escudo primeiro
         if self.shield > 0:
-            self.shield = max(0, self.shield - amount)
-        else:
+            shield_damage = min(amount, self.shield)
+            self.shield -= shield_damage
+            amount -= shield_damage
+            
+        # Dano restante vai para a vida
+        if amount > 0:
             self.health = max(0, self.health - amount)
-            if self.health <= 0:
-                return True
-        return False
+            self.invincible = True
+            self.invincible_timer = pygame.time.get_ticks()
+            
+            # Efeito de repulsão
+            if enemy:
+                knockback = 10
+                if enemy.rect.centerx < self.rect.centerx:
+                    self.rect.x += knockback
+                else:
+                    self.rect.x -= knockback
+        
+        return self.health <= 0

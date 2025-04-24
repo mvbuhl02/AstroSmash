@@ -8,6 +8,7 @@ from game.managers.score import ScoreManager
 from game.entities.player import Player
 from game.entities.enemies import Enemy, EnemyType
 from game.entities.bullets import Bullet, EnemyBullet
+WAVE_TRANSITION_DURATION = 2000
 
 class AstroSmash:
     def __init__(self):
@@ -39,19 +40,52 @@ class AstroSmash:
         self.last_enemy_spawn = 0
         self.enemy_spawn_interval = 1000
         self.boss_active = False
+        self.stars = self.generate_stars(100)  # Pré-gera as estrelas
         
+        self.enemies_defeated = 0
+        self.enemies_per_wave = 15  # Inimigos iniciais necessários por wave
+        self.wave_transition_start = 0
+        self.show_wave_message = False
+        
+    def spawn_wave_enemies(self):
+        """Spawna inimigos de forma gradual para a wave atual"""
+        # Configurações baseadas na wave atual
+        base_enemies = 8 + self.score_manager.wave * 2
+        min_interval = max(200, 800 - self.score_manager.wave * 30)  # Intervalo mínimo de 200ms
+        
+        # Agenda os spawns com eventos temporizados
+        for i in range(base_enemies):
+            spawn_time = i * min_interval  # Distribui os spawns uniformemente
+            pygame.time.set_timer(pygame.USEREVENT + i, spawn_time, True)
+        
+        # Configura spawns contínuos durante a wave
+        self.enemy_spawn_interval = min_interval * 2  # Intervalo maior para inimigos extras
+        self.last_enemy_spawn = pygame.time.get_ticks()
+        
+        # Aviso visual
+        self.show_wave_message = True
+        self.wave_transition_start = pygame.time.get_ticks()
+        if self.audio_manager.has_sound and 'wave' in self.audio_manager.sounds:
+            self.audio_manager.play_sound('wave')
+        
+        
+    def generate_stars(self, count):
+        """Pré-gera as posições das estrelas para otimização"""
+        return [(random.randint(0, WIDTH), random.randint(0, HEIGHT), random.randint(1, 3)) 
+                for _ in range(count)]
+    
     def load_audio(self):
-        """Carrega todos os efeitos sonoros"""
+        """Carrega todos os efeitos sonoros de forma robusta"""
         self.audio_manager.has_sound = True
+        sounds_loaded = False
+        
         try:
             base_path = os.path.join('assets', 'sounds')
             
-            # Verifica se a pasta existe
             if not os.path.exists(base_path):
-                os.makedirs(base_path)
-                print(f"Aviso: Pasta de sons criada em {base_path}")
+                print(f"Aviso: Pasta de sons não encontrada em {base_path}")
                 self.audio_manager.has_sound = False
-                return
+                return False
 
             sounds_to_load = [
                 ('tiro', 'tiro.mp3'),
@@ -60,39 +94,34 @@ class AstroSmash:
                 ('movimento', 'movimento.mp3'),
                 ('hit', 'hit.mp3'),
                 ('damage', 'damage.wav'),
-                ('gameover', 'gameover.mp3')
+                ('gameover', 'gameover.mp3'),
+                ('wave', 'wave.mp3')
             ]
 
             for name, file in sounds_to_load:
                 path = os.path.join(base_path, file)
-                try:
-                    if os.path.exists(path):
-                        self.audio_manager.load_sound(name, path)
-                        print(f"Som {name} carregado com sucesso")
-                    else:
-                        print(f"Aviso: Arquivo não encontrado - {file}")
-                        self.audio_manager.has_sound = False
-                except Exception as e:
-                    print(f"Erro ao carregar {name}: {str(e)}")
-                    self.audio_manager.has_sound = False
+                if os.path.exists(path):
+                    self.audio_manager.load_sound(name, path)
+                    sounds_loaded = True
 
-            # Fallback caso nenhum som seja carregado
-            if not self.audio_manager.sounds:
-                self.audio_manager.has_sound = False
-                print("AVISO: Nenhum som foi carregado - Continuando sem áudio")
+            if 'fundo' in self.audio_manager.sounds:
+                self.audio_manager.play_music('fundo')
                 
         except Exception as e:
             print(f"Erro crítico no sistema de áudio: {str(e)}")
             self.audio_manager.has_sound = False
+            
+        return sounds_loaded
     
     def spawn_enemy(self):
         now = pygame.time.get_ticks()
         
         # Spawn de boss a cada 5 waves
-        if self.score_manager.wave % 5 == 0 and not self.boss_active:
+        if self.score_manager.wave % 5 == 0 and not self.boss_active and len([e for e in self.enemies if e.enemy_type == EnemyType.BOSS]) == 0:
             enemy = Enemy(EnemyType.BOSS)
             self.boss_active = True
-            self.audio_manager.play_sound('chefe')
+            if self.audio_manager.has_sound:
+                self.audio_manager.play_sound('chefe')
         else:
             # Spawn de inimigos normais ou asteroides
             if random.random() < 0.3:  # 30% de chance de ser asteroide
@@ -130,6 +159,8 @@ class AstroSmash:
                     if self.game_state == SPLASH and (pygame.time.get_ticks() - self.splash_time) < 2000:
                         continue
                     self.reset_game()
+            if self.game_state == PLAYING and pygame.USEREVENT <= event.type <= pygame.USEREVENT + 50:
+                self.spawn_enemy()
     
     def update(self):
         if self.game_state == SPLASH:
@@ -142,58 +173,136 @@ class AstroSmash:
             # Verifica se o boss foi derrotado
             self.boss_active = any(e.enemy_type == EnemyType.BOSS for e in self.enemies)
             
-            # Spawn de inimigos
+            # Controle de spawn por wave
             now = pygame.time.get_ticks()
-            if now - self.last_enemy_spawn > self.enemy_spawn_interval:
+            enemies_on_screen = len(self.enemies)
+            max_enemies = 5 + self.score_manager.wave  # Limite baseado na wave atual
+            
+            # Spawn de inimigos controlado
+            if (now - self.last_enemy_spawn > self.enemy_spawn_interval and 
+                enemies_on_screen < max_enemies):
+                
                 self.last_enemy_spawn = now
                 self.spawn_enemy()
                 
-                # Aumenta dificuldade gradualmente
-                if random.random() < 0.1:
-                    self.enemy_spawn_interval = max(200, self.enemy_spawn_interval - 50)
-                    if self.enemy_spawn_interval % 500 == 0:
+                # Ajuste de dificuldade progressivo
+                if random.random() < 0.2:  # 20% de chance de ajustar
+                    # Reduz intervalo até um mínimo de 200ms
+                    self.enemy_spawn_interval = max(200, self.enemy_spawn_interval - 30)
+                    
+                    # Wave completa quando atingir certa dificuldade
+                    if self.enemy_spawn_interval <= 300:  # Ajuste este valor conforme necessário
                         self.score_manager.increase_wave()
+                        self.enemy_spawn_interval = 800  # Reseta com valor base para nova wave
+                        self.show_wave_message = True
+                        self.wave_transition_start = now
+            
+            # Verificação alternativa de wave completa
+            if (not self.boss_active and 
+                enemies_on_screen == 0 and 
+                now - self.last_enemy_spawn > 3000):  # 3 segundos sem inimigos
+                self.score_manager.increase_wave()
+                self.enemy_spawn_interval = 800
+                self.last_enemy_spawn = now
             
             # Colisões
             self.check_collisions()
-    
+            
+            # Atualiza mensagem de wave
+            if self.show_wave_message:
+                if now - self.wave_transition_start > 2000:  # 2 segundos de exibição
+                    self.show_wave_message = False
+        
+    def next_wave(self):
+        """Prepara a próxima wave"""
+        self.score_manager.increase_wave()
+        
+        # Limpa qualquer evento de spawn pendente
+        for i in range(50):
+            pygame.time.set_timer(pygame.USEREVENT + i, 0)
+        
+        # Inicia a nova wave
+        self.spawn_wave_enemies()
+        
+        # Boss a cada 5 waves
+        if self.score_manager.wave % 5 == 0:
+            self.spawn_boss()
+            
     def check_collisions(self):
-        # Colisões entre projéteis e inimigos
-        hits = pygame.sprite.groupcollide(self.bullets, self.enemies, True, False)
-        for bullet, enemy_list in hits.items():
-            for enemy in enemy_list:
-                damage = 2 if enemy.enemy_type == EnemyType.BOSS else 1
+        DAMAGE_SETTINGS = {
+            'player_bullet': {
+                EnemyType.BOSS: 3,
+                EnemyType.ASTEROID: 2,
+                EnemyType.COMMON: 1
+            },
+            'enemy_collision': {
+                EnemyType.BOSS: 6,
+                EnemyType.ASTEROID: 4,
+                EnemyType.COMMON: 2
+            },
+            'enemy_bullet': 3
+        }
+        
+        SCORE_VALUES = {
+            EnemyType.BOSS: 100,
+            EnemyType.ASTEROID: 25,
+            EnemyType.COMMON: 10
+        }
+        
+        # Colisões: Projéteis do jogador contra inimigos
+        bullet_hits = pygame.sprite.groupcollide(self.bullets, self.enemies, True, False)
+        enemies_defeated_in_this_check = 0  # Contador temporário
+        
+        for bullet, enemies in bullet_hits.items():
+            for enemy in enemies:
+                damage = DAMAGE_SETTINGS['player_bullet'][enemy.enemy_type]
                 if enemy.take_damage(damage):
-                    self.audio_manager.play_sound('hit')
-                    # Pontuação baseada no tipo de inimigo
+                    if self.audio_manager.has_sound:
+                        self.audio_manager.play_sound('hit')
+                    
+                    self.score_manager.add_score(SCORE_VALUES[enemy.enemy_type])
+                    enemies_defeated_in_this_check += 1  # Incrementa contador
+                    
                     if enemy.enemy_type == EnemyType.BOSS:
-                        self.score_manager.add_score(100)
                         self.boss_active = False
-                    elif enemy.enemy_type == EnemyType.ASTEROID:
-                        self.score_manager.add_score(20)
-                    else:
-                        self.score_manager.add_score(10)
 
-        # Colisões entre jogador e inimigos
-        hits = pygame.sprite.spritecollide(self.player, self.enemies, False)
-        for hit in hits:
-            damage = 10 if hit.enemy_type == EnemyType.BOSS else 5  # Reduzi o dano do boss de 20 para 10
-            self.audio_manager.play_sound('damage')
-            if self.player.take_damage(damage):
-                self.game_over()
+        if not self.player.invincible:
+            hits = pygame.sprite.spritecollide(self.player, self.enemies, True)
+            for enemy in hits:
+                damage = DAMAGE_SETTINGS['enemy_collision'][enemy.enemy_type]
+                
+                if self.audio_manager.has_sound:
+                    self.audio_manager.play_sound('damage')
+                    
+                if self.player.take_damage(damage, enemy):
+                    self.game_over()
 
-        # Colisões entre jogador e projéteis inimigos
+        # Colisões: Projéteis inimigos contra jogador
         hits = pygame.sprite.spritecollide(self.player, self.enemy_bullets, True)
-        for hit in hits:
-            self.audio_manager.play_sound('damage')
-            if self.player.take_damage(2):  # Reduzi o dano dos projéteis de 5 para 2
+        for bullet in hits:
+            if self.audio_manager.has_sound:
+                self.audio_manager.play_sound('damage')
+            
+            if self.player.take_damage(DAMAGE_SETTINGS['enemy_bullet']):
                 self.game_over()
+        
+        # Atualiza contagem de inimigos derrotados
+        if enemies_defeated_in_this_check > 0:
+            self.enemies_defeated += enemies_defeated_in_this_check
+            
+            # Avança de wave quando derrotar todos os inimigos necessários
+            if self.enemies_defeated >= self.enemies_per_wave and not self.boss_active:
+                self.score_manager.increase_wave()
+                self.enemies_defeated = 0
+                self.enemies_per_wave = 15 + self.score_manager.wave * 2
+                self.spawn_wave_enemies()
     
     def game_over(self):
         self.game_state = GAME_OVER
         self.score_manager.save_high_score()
         self.audio_manager.stop_music()
-        self.audio_manager.play_sound('gameover')
+        if self.audio_manager.has_sound:
+            self.audio_manager.play_sound('gameover')
     
     def reset_game(self):
         self.game_state = PLAYING
@@ -207,14 +316,12 @@ class AstroSmash:
         self.player = Player(self.audio_manager)
         self.all_sprites.add(self.player)
         
-        # Reset do score manager
         self.score_manager.score = 0
         self.score_manager.wave = 1
-        self.score_manager.load_high_score()  # Recarrega o high score
-        
         self.enemy_spawn_interval = 1000
         
-        self.audio_manager.play_music('fundo')
+        if self.audio_manager.has_sound:
+            self.audio_manager.play_music('fundo')
     
     def draw(self):
         self.screen.fill(BLACK)
@@ -222,13 +329,39 @@ class AstroSmash:
         self.all_sprites.draw(self.screen)
         self.draw_hud()
         self.draw_state_screens()
+        if self.show_wave_message:
+            self.draw_wave_transition()
+
+    def draw_wave_transition(self):
+        """Desenha o aviso de nova wave"""
+        now = pygame.time.get_ticks()
+        if now - self.wave_transition_start < WAVE_TRANSITION_DURATION:
+            # Efeito de fade in/out
+            progress = (now - self.wave_transition_start) / WAVE_TRANSITION_DURATION
+            alpha = 255 * (1 - abs(progress - 0.5)) * 2  # Vai de 0 a 255 e volta
+            
+            s = pygame.Surface((WIDTH, 100), pygame.SRCALPHA)
+            s.fill((0, 0, 0, 150))
+            self.screen.blit(s, (0, HEIGHT//2 - 50))
+            
+            # Efeito de texto pulsante
+            size = 48 + int(10 * abs(progress - 0.5))
+            color = (
+                min(255, 150 + int(105 * abs(progress - 0.5) * 2)),
+                min(255, 150 + int(105 * abs(progress - 0.5) * 2)),
+                0
+            )
+            
+            self.draw_text(f"WAVE {self.score_manager.wave}", size, WIDTH//2, HEIGHT//2, color)
+        else:
+            self.show_wave_message = False
     
     def draw_stars(self):
-        for i in range(50):
-            x = (pygame.time.get_ticks() // 100 + i * 100) % WIDTH
-            y = (i * 20 + pygame.time.get_ticks() // 50) % HEIGHT
-            brightness = min(255, 50 + abs((pygame.time.get_ticks() // 10 + i * 50) % 510 - 255))
-            pygame.draw.circle(self.screen, (brightness, brightness, brightness), (x, y), 1)
+        now = pygame.time.get_ticks()
+        for x, y, size in self.stars:
+            brightness = min(255, 50 + abs((now // 10 + x + y) % 510 - 255))
+            pygame.draw.circle(self.screen, (brightness, brightness, brightness), 
+                              (x, (y + now // 50) % HEIGHT), size)
     
     def draw_hud(self):
         self.draw_text(f"Pontuação: {self.score_manager.score}", 30, 70, 20)
