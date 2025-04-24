@@ -13,7 +13,7 @@ WAVE_TRANSITION_DURATION = 2000
 class AstroSmash:
     def __init__(self):
         pygame.init()
-        pygame.display.set_caption("AstroSmash MVP")
+        pygame.display.set_caption("Super FAG AstroSmash")
         
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         self.clock = pygame.time.Clock()
@@ -186,8 +186,7 @@ class AstroSmash:
                 self.spawn_enemy()
                 
                 # Ajuste de dificuldade progressivo
-                if random.random() < 0.2:  # 20% de chance de ajustar
-                    # Reduz intervalo até um mínimo de 200ms
+                if random.random() < 0.2:
                     self.enemy_spawn_interval = max(200, self.enemy_spawn_interval - 30)
                     
                     # Wave completa quando atingir certa dificuldade
@@ -217,7 +216,6 @@ class AstroSmash:
         """Prepara a próxima wave"""
         self.score_manager.increase_wave()
         
-        # Limpa qualquer evento de spawn pendente
         for i in range(50):
             pygame.time.set_timer(pygame.USEREVENT + i, 0)
         
@@ -352,7 +350,7 @@ class AstroSmash:
                 0
             )
             
-            self.draw_text(f"WAVE {self.score_manager.wave}", size, WIDTH//2, HEIGHT//2, color)
+            self.draw_text(f"FASE {self.score_manager.wave}", size, WIDTH//2, HEIGHT//2, color)
         else:
             self.show_wave_message = False
     
@@ -378,7 +376,7 @@ class AstroSmash:
                         (WIDTH//2 - 50, 10, self.player.heat, 10))
         
         if self.boss_active:
-            self.draw_text("BOSS ALERT!", 40, WIDTH//2, 80, ORANGE)
+            self.draw_text("ALERTA! INIMIGOS A CAMINHO", 40, WIDTH//2, 80, ORANGE)
     
     def draw_state_screens(self):
         if self.game_state == SPLASH:
@@ -394,17 +392,17 @@ class AstroSmash:
         s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         s.fill((0, 0, 0, 180))
         self.screen.blit(s, (0, 0))
-        self.draw_text("ASTROSMASH", 72, WIDTH//2, HEIGHT//3)
-        self.draw_text("MVP Edition", 36, WIDTH//2, HEIGHT//2)
+        self.draw_text("SUPER FAG ASTROSMASH", 72, WIDTH//2, HEIGHT//3)
+        self.draw_text("Dedicatória: Professor Jefersson", 36, WIDTH//2, HEIGHT//2)
     
     def draw_menu(self):
         s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         s.fill((0, 0, 0, 180))
         self.screen.blit(s, (0, 0))
-        self.draw_text("ASTROSMASH", 64, WIDTH//2, HEIGHT//4)
+        self.draw_text("SUPER FAG ASTROSMASH", 64, WIDTH//2, HEIGHT//4)
         self.draw_text(f"Recorde: {self.score_manager.high_score}", 36, WIDTH//2, HEIGHT//3)
         self.draw_text("Pressione ENTER para Jogar", 36, WIDTH//2, HEIGHT//2)
-        self.draw_text("Setas para mover | Espaço para atirar", 24, WIDTH//2, HEIGHT*3//4)
+        self.draw_text("W,A,S,D para mover | Espaço para atirar", 24, WIDTH//2, HEIGHT*3//4)
     
     def draw_pause(self):
         s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
