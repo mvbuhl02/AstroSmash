@@ -19,50 +19,41 @@ class AstroSmash:
         self.clock = pygame.time.Clock()
         self.running = True
         
-        # inicializa
         self.audio_manager = AudioManager()
         self.load_audio()
         self.score_manager = ScoreManager()
         
-        # sprites
         self.all_sprites = pygame.sprite.Group()
         self.enemies = pygame.sprite.Group()
         self.bullets = pygame.sprite.Group()
         self.enemy_bullets = pygame.sprite.Group()
         
-        # cria o player
         self.player = Player(self.audio_manager)
         self.all_sprites.add(self.player)
         
-        # variaveis
         self.game_state = SPLASH
         self.splash_time = pygame.time.get_ticks()
         self.last_enemy_spawn = 0
         self.enemy_spawn_interval = 1000
         self.boss_active = False
-        self.stars = self.generate_stars(100)  # Pré-gera as estrelas
+        self.stars = self.generate_stars(100)
         
         self.enemies_defeated = 0
-        self.enemies_per_wave = 15  # Inimigos iniciais necessários por wave
+        self.enemies_per_wave = 15 
         self.wave_transition_start = 0
         self.show_wave_message = False
         
     def spawn_wave_enemies(self):
-        """Spawna inimigos de forma gradual para a wave atual"""
-        # Configurações baseadas na wave atual
         base_enemies = 8 + self.score_manager.wave * 2
-        min_interval = max(200, 800 - self.score_manager.wave * 30)  # Intervalo mínimo de 200ms
+        min_interval = max(200, 800 - self.score_manager.wave * 30) 
         
-        # Agenda os spawns com eventos temporizados
         for i in range(base_enemies):
-            spawn_time = i * min_interval  # Distribui os spawns uniformemente
+            spawn_time = i * min_interval  
             pygame.time.set_timer(pygame.USEREVENT + i, spawn_time, True)
         
-        # Configura spawns contínuos durante a wave
-        self.enemy_spawn_interval = min_interval * 2  # Intervalo maior para inimigos extras
+        self.enemy_spawn_interval = min_interval * 2
         self.last_enemy_spawn = pygame.time.get_ticks()
         
-        # Aviso visual
         self.show_wave_message = True
         self.wave_transition_start = pygame.time.get_ticks()
         if self.audio_manager.has_sound and 'wave' in self.audio_manager.sounds:
@@ -70,12 +61,10 @@ class AstroSmash:
         
         
     def generate_stars(self, count):
-        """Pré-gera as posições das estrelas para otimização"""
         return [(random.randint(0, WIDTH), random.randint(0, HEIGHT), random.randint(1, 3)) 
                 for _ in range(count)]
     
     def load_audio(self):
-        """Carrega todos os efeitos sonoros de forma robusta"""
         self.audio_manager.has_sound = True
         sounds_loaded = False
         
@@ -116,15 +105,13 @@ class AstroSmash:
     def spawn_enemy(self):
         now = pygame.time.get_ticks()
         
-        # Spawn de boss a cada 5 waves
         if self.score_manager.wave % 5 == 0 and not self.boss_active and len([e for e in self.enemies if e.enemy_type == EnemyType.BOSS]) == 0:
             enemy = Enemy(EnemyType.BOSS)
             self.boss_active = True
             if self.audio_manager.has_sound:
                 self.audio_manager.play_sound('chefe')
         else:
-            # Spawn de inimigos normais ou asteroides
-            if random.random() < 0.3:  # 30% de chance de ser asteroide
+            if random.random() < 0.3: 
                 enemy = Enemy(EnemyType.ASTEROID)
             else:
                 enemy = Enemy(EnemyType.COMMON)
@@ -170,61 +157,51 @@ class AstroSmash:
         elif self.game_state == PLAYING:
             self.all_sprites.update()
             
-            # Verifica se o boss foi derrotado
             self.boss_active = any(e.enemy_type == EnemyType.BOSS for e in self.enemies)
             
-            # Controle de spawn por wave
             now = pygame.time.get_ticks()
             enemies_on_screen = len(self.enemies)
-            max_enemies = 5 + self.score_manager.wave  # Limite baseado na wave atual
+            max_enemies = 5 + self.score_manager.wave
             
-            # Spawn de inimigos controlado
             if (now - self.last_enemy_spawn > self.enemy_spawn_interval and 
                 enemies_on_screen < max_enemies):
                 
                 self.last_enemy_spawn = now
                 self.spawn_enemy()
                 
-                # Ajuste de dificuldade progressivo
-                if random.random() < 0.2:  # 20% de chance de ajustar
-                    # Reduz intervalo até um mínimo de 200ms
+                if random.random() < 0.2:
+                    
                     self.enemy_spawn_interval = max(200, self.enemy_spawn_interval - 30)
                     
-                    # Wave completa quando atingir certa dificuldade
-                    if self.enemy_spawn_interval <= 300:  # Ajuste este valor conforme necessário
+                    
+                    if self.enemy_spawn_interval <= 300:  
                         self.score_manager.increase_wave()
-                        self.enemy_spawn_interval = 800  # Reseta com valor base para nova wave
+                        self.enemy_spawn_interval = 800 
                         self.show_wave_message = True
                         self.wave_transition_start = now
             
-            # Verificação alternativa de wave completa
+
             if (not self.boss_active and 
                 enemies_on_screen == 0 and 
-                now - self.last_enemy_spawn > 3000):  # 3 segundos sem inimigos
+                now - self.last_enemy_spawn > 3000):  
                 self.score_manager.increase_wave()
                 self.enemy_spawn_interval = 800
                 self.last_enemy_spawn = now
             
-            # Colisões
             self.check_collisions()
             
-            # Atualiza mensagem de wave
             if self.show_wave_message:
-                if now - self.wave_transition_start > 2000:  # 2 segundos de exibição
+                if now - self.wave_transition_start > 2000:
                     self.show_wave_message = False
         
     def next_wave(self):
-        """Prepara a próxima wave"""
         self.score_manager.increase_wave()
         
-        # Limpa qualquer evento de spawn pendente
         for i in range(50):
             pygame.time.set_timer(pygame.USEREVENT + i, 0)
         
-        # Inicia a nova wave
         self.spawn_wave_enemies()
         
-        # Boss a cada 5 waves
         if self.score_manager.wave % 5 == 0:
             self.spawn_boss()
             
@@ -249,9 +226,8 @@ class AstroSmash:
             EnemyType.COMMON: 10
         }
         
-        # Colisões: Projéteis do jogador contra inimigos
         bullet_hits = pygame.sprite.groupcollide(self.bullets, self.enemies, True, False)
-        enemies_defeated_in_this_check = 0  # Contador temporário
+        enemies_defeated_in_this_check = 0  
         
         for bullet, enemies in bullet_hits.items():
             for enemy in enemies:
@@ -261,7 +237,7 @@ class AstroSmash:
                         self.audio_manager.play_sound('hit')
                     
                     self.score_manager.add_score(SCORE_VALUES[enemy.enemy_type])
-                    enemies_defeated_in_this_check += 1  # Incrementa contador
+                    enemies_defeated_in_this_check += 1 
                     
                     if enemy.enemy_type == EnemyType.BOSS:
                         self.boss_active = False
@@ -277,7 +253,7 @@ class AstroSmash:
                 if self.player.take_damage(damage, enemy):
                     self.game_over()
 
-        # Colisões: Projéteis inimigos contra jogador
+
         hits = pygame.sprite.spritecollide(self.player, self.enemy_bullets, True)
         for bullet in hits:
             if self.audio_manager.has_sound:
@@ -286,11 +262,9 @@ class AstroSmash:
             if self.player.take_damage(DAMAGE_SETTINGS['enemy_bullet']):
                 self.game_over()
         
-        # Atualiza contagem de inimigos derrotados
         if enemies_defeated_in_this_check > 0:
             self.enemies_defeated += enemies_defeated_in_this_check
             
-            # Avança de wave quando derrotar todos os inimigos necessários
             if self.enemies_defeated >= self.enemies_per_wave and not self.boss_active:
                 self.score_manager.increase_wave()
                 self.enemies_defeated = 0
@@ -333,18 +307,15 @@ class AstroSmash:
             self.draw_wave_transition()
 
     def draw_wave_transition(self):
-        """Desenha o aviso de nova wave"""
         now = pygame.time.get_ticks()
         if now - self.wave_transition_start < WAVE_TRANSITION_DURATION:
-            # Efeito de fade in/out
             progress = (now - self.wave_transition_start) / WAVE_TRANSITION_DURATION
-            alpha = 255 * (1 - abs(progress - 0.5)) * 2  # Vai de 0 a 255 e volta
+            alpha = 255 * (1 - abs(progress - 0.5)) * 2
             
             s = pygame.Surface((WIDTH, 100), pygame.SRCALPHA)
             s.fill((0, 0, 0, 150))
             self.screen.blit(s, (0, HEIGHT//2 - 50))
             
-            # Efeito de texto pulsante
             size = 48 + int(10 * abs(progress - 0.5))
             color = (
                 min(255, 150 + int(105 * abs(progress - 0.5) * 2)),
@@ -378,7 +349,7 @@ class AstroSmash:
                         (WIDTH//2 - 50, 10, self.player.heat, 10))
         
         if self.boss_active:
-            self.draw_text("BOSS ALERT!", 40, WIDTH//2, 80, ORANGE)
+            self.draw_text("ANTEÇÃO! CHEFÃO A CAMINHO", 40, WIDTH//2, 80, ORANGE)
     
     def draw_state_screens(self):
         if self.game_state == SPLASH:
@@ -394,17 +365,17 @@ class AstroSmash:
         s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         s.fill((0, 0, 0, 180))
         self.screen.blit(s, (0, 0))
-        self.draw_text("ASTROSMASH", 72, WIDTH//2, HEIGHT//3)
-        self.draw_text("MVP Edition", 36, WIDTH//2, HEIGHT//2)
+        self.draw_text("SUPER FAG ASTROSMASH", 72, WIDTH//2, HEIGHT//3)
+        self.draw_text("Dedicatória: Professor Jeferson", 36, WIDTH//2, HEIGHT//2)
     
     def draw_menu(self):
         s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         s.fill((0, 0, 0, 180))
         self.screen.blit(s, (0, 0))
-        self.draw_text("ASTROSMASH", 64, WIDTH//2, HEIGHT//4)
+        self.draw_text("SUPER FAG ASTROSMASH", 64, WIDTH//2, HEIGHT//4)
         self.draw_text(f"Recorde: {self.score_manager.high_score}", 36, WIDTH//2, HEIGHT//3)
         self.draw_text("Pressione ENTER para Jogar", 36, WIDTH//2, HEIGHT//2)
-        self.draw_text("Setas para mover | Espaço para atirar", 24, WIDTH//2, HEIGHT*3//4)
+        self.draw_text("W,A,S,D para mover | Espaço para atirar", 24, WIDTH//2, HEIGHT*3//4)
     
     def draw_pause(self):
         s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)

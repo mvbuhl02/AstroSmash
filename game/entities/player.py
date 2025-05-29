@@ -64,7 +64,6 @@ class Player(pygame.sprite.Sprite):
     def update(self):
         now = pygame.time.get_ticks()
         
-        # Atualização de animação
         if now - self.last_update > self.animation_speed:
             self.last_update = now
             self.current_frame = (self.current_frame + 1) % len(self.frames)
@@ -77,12 +76,10 @@ class Player(pygame.sprite.Sprite):
                 else:
                     self.image.set_alpha(255)
         
-        # Fim da invencibilidade
         if self.invincible and now - self.invincible_timer > self.invincible_duration:
             self.invincible = False
             self.image.set_alpha(255)
         
-        # Movimento
         keys = pygame.key.get_pressed()
         is_moving = False
         
@@ -124,19 +121,16 @@ class Player(pygame.sprite.Sprite):
         if self.invincible:
             return False
             
-        # Dano no escudo primeiro
         if self.shield > 0:
             shield_damage = min(amount, self.shield)
             self.shield -= shield_damage
             amount -= shield_damage
             
-        # Dano restante vai para a vida
         if amount > 0:
             self.health = max(0, self.health - amount)
             self.invincible = True
             self.invincible_timer = pygame.time.get_ticks()
             
-            # Efeito de repulsão
             if enemy:
                 knockback = 10
                 if enemy.rect.centerx < self.rect.centerx:
