@@ -2,7 +2,7 @@ import pygame
 import os
 import random
 from config import *
-from enum import Enum
+from enum import Enum #
 
 class EnemyType(Enum):
     COMMON = 1
