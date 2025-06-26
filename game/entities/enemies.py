@@ -2,7 +2,7 @@ import pygame
 import os
 import random
 from config import *
-from enum import Enum #
+from enum import Enum
 
 class EnemyType(Enum):
     COMMON = 1
@@ -22,37 +22,37 @@ class Enemy(pygame.sprite.Sprite):
         self.rect = self.image.get_rect(center=self.get_initial_position())
         self.hit = False
         self.hit_timer = 0
-    
+
     def _setup_attributes(self):
         if self.enemy_type == EnemyType.BOSS:
-            self.health = 50
-            self.damage = 50
-            self.speed = random.uniform(0.8, 1.2)
+            self.health = 80
+            self.damage = 150
+            self.speed = random.uniform(0.8, 0.8)
         elif self.enemy_type == EnemyType.ASTEROID:
             self.health = 10
-            self.damage = 20
+            self.damage = 25
             self.speed = random.uniform(1.5, 2.5)
         else:
             self.health = 1
-            self.damage = 10
+            self.damage = 13
             self.speed = random.uniform(2.0, 3.0)
         self.shield = 0
-    
+
     def get_initial_position(self):
         if self.enemy_type == EnemyType.BOSS:
             return (WIDTH // 2, -100)
-        return (random.randint(30, WIDTH-30), -30)
-    
+        return (random.randint(30, WIDTH - 30), -30)
+
     def get_animation_speed(self):
         return 100 if self.enemy_type == EnemyType.BOSS else 150
-    
+
     def get_sprite_folder(self):
         return {
-            EnemyType.BOSS: 'boss',
+            EnemyType.BOSS: 'enemy',
             EnemyType.ASTEROID: 'asteroid',
             EnemyType.COMMON: 'enemy'
         }[self.enemy_type]
-    
+
     def create_fallback_image(self):
         size = (60, 60) if self.enemy_type == EnemyType.BOSS else (30, 30)
         surface = pygame.Surface(size, pygame.SRCALPHA)
@@ -66,7 +66,7 @@ class Enemy(pygame.sprite.Sprite):
         else:
             pygame.draw.circle(surface, colors[self.enemy_type], (15, 15), 15)
         return surface
-    
+
     def load_animation_frames(self):
         frames = []
         folder = self.get_sprite_folder()
@@ -74,19 +74,16 @@ class Enemy(pygame.sprite.Sprite):
         try:
             if not os.path.exists(sprite_path):
                 return [self.create_fallback_image()]
-            frame_files = sorted([f for f in os.listdir(sprite_path) 
-                               if f.endswith(('.png', '.jpg', '.jpeg')) and f.startswith(f'{folder}_')])
+            frame_files = sorted([f for f in os.listdir(sprite_path)
+                                  if f.endswith(('.png', '.jpg', '.jpeg')) and f.startswith(f'{folder}_')])
             for frame_file in frame_files:
-                try:
-                    frame = pygame.image.load(os.path.join(sprite_path, frame_file)).convert_alpha()
-                    size = (60, 60) if self.enemy_type == EnemyType.BOSS else (30, 30)
-                    frames.append(pygame.transform.scale(frame, size))
-                except Exception as e:
-                    continue
+                frame = pygame.image.load(os.path.join(sprite_path, frame_file)).convert_alpha()
+                size = (120, 120) if self.enemy_type == EnemyType.BOSS else (30, 30)
+                frames.append(pygame.transform.scale(frame, size))
         except Exception as e:
-            pass
+            print(f"Erro ao carregar sprites do inimigo: {e}")
         return frames or [self.create_fallback_image()]
-    
+
     def update(self):
         now = pygame.time.get_ticks()
         if now - self.last_update > self.animation_speed:
@@ -107,7 +104,7 @@ class Enemy(pygame.sprite.Sprite):
             self.rect.x += random.randint(-2, 2)
         if self.rect.top > HEIGHT:
             self.kill()
-    
+
     def take_damage(self, amount):
         self.health -= amount
         self.hit = True

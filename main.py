@@ -39,7 +39,7 @@ class AstroSmash:
         self.stars = self.generate_stars(100)
         
         self.enemies_defeated = 0
-        self.enemies_per_wave = 15 
+        self.enemies_per_wave = 1
         self.wave_transition_start = 0
         self.show_wave_message = False
         
@@ -245,7 +245,7 @@ class AstroSmash:
         if not self.player.invincible:
             hits = pygame.sprite.spritecollide(self.player, self.enemies, True)
             for enemy in hits:
-                damage = DAMAGE_SETTINGS['enemy_collision'][enemy.enemy_type]
+                damage = enemy.damage
                 
                 if self.audio_manager.has_sound:
                     self.audio_manager.play_sound('damage')
